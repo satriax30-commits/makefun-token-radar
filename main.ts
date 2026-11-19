@@ -35,6 +35,63 @@ function arg(name: string, fallback: string): string {
   return withEquals === undefined ? fallback : withEquals.slice(name.length + 3);
 }
 
+/**
+ * Re-read the board this run just wrote and check it against the gate's own rules:
+ * ranks exactly 1..N, implied values non-rising, every watchlist slug present, and every
+ * row's farm steps within 3..12 strings of 20..600 characters. The model already ran
+ * boardIssue before writing, so this is a second, independent pass over the bytes on
+ * disk: it catches a bad write, a truncated file, or a row the in-memory check never saw.
+ * Returns a one-line summary; throws on the first failure so the run exits non-zero.
+ */
+function verifyWrittenBoard(outDir: string, watchlist: string[]): string {
+  const raw = readFileSync(join(outDir, 'board.json'), 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('self-check: board.json is not JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || !Array.isArray((parsed as { rows?: unknown }).rows)) {
+    throw new Error('self-check: board.json has no rows array');
+  }
+  const rows = (parsed as { rows: Array<Record<string, unknown>> }).rows;
+  if (rows.length < 100 || rows.length > 4000) {
+    throw new Error(`self-check: board holds ${rows.length} rows, the gate wants 100..4000`);
+  }
+  const seen = new Set<string>();
+  let previous = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (row.rank !== i + 1) throw new Error(`self-check: row ${i + 1} carries rank ${String(row.rank)}`);
+    if (typeof row.slug !== 'string' || seen.has(row.slug)) {
+      throw new Error(`self-check: row ${i + 1} has a missing or duplicate slug`);
+    }
+    seen.add(row.slug);
+    const value = row.implied_value_usd;
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(`self-check: row ${row.slug} has implied value ${String(value)}`);
+    }
+    if (value > previous) throw new Error(`self-check: row ${i + 1} outranks row ${i} on implied value`);
+    previous = value;
+    const steps = row.farm_steps;
+    if (!Array.isArray(steps) || steps.length < 3 || steps.length > 12) {
+      throw new Error(`self-check: row ${row.slug} has ${Array.isArray(steps) ? steps.length : 'no'} farm steps`);
+    }
+    for (const step of steps) {
+      if (typeof step !== 'string' || step.length < 20 || step.length > 600) {
+        throw new Error(`self-check: row ${row.slug} has a farm step of ${typeof step === 'string' ? step.length : 'unknown'} characters`);
+      }
+    }
+  }
+  const missing = watchlist.filter((slug) => !seen.has(slug));
+  if (missing.length > 0) {
+    throw new Error(`self-check: the written board misses ${missing.length} watchlist slugs: ${missing.slice(0, 5).join(', ')}`);
+  }
+  const first = rows[0]!.implied_value_usd as number;
+  const last = rows[rows.length - 1]!.implied_value_usd as number;
+  return `self-check passed: ${rows.length} rows, ranks 1..${rows.length}, implied $${first.toLocaleString('en-US')}..$${last.toLocaleString('en-US')}, watchlist ${watchlist.length}/${watchlist.length}, farm steps ok`;
+}
+
 const inputArg = arg('input', '/input');
 const inputFile = inputArg.endsWith('.json') ? inputArg : join(inputArg, 'snapshot.json');
 if (!existsSync(inputFile)) {
@@ -86,7 +143,26 @@ for (const name of shots) {
 // The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
+// Self-check: re-read the board from disk and verify it against the gate's rules.
+// A failure here means the bytes on disk are not what the model scored, so the run
+// stops instead of handing in a board the scorer would refuse.
+let selfCheck: string;
+try {
+  selfCheck = verifyWrittenBoard(out, snapshot.watchlist);
+} catch (error) {
+  process.stderr.write(`token radar: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
+
+// The head of the board, for the run log: the three rows the judge meets first.
+const top3 = board
+  .slice(0, 3)
+  .map((row) => `#${row.rank} ${row.slug} $${row.implied_value_usd.toLocaleString('en-US')}`)
+  .join(', ');
+
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.set_aside_size} products set aside, ${radar.live_size} live set aside)\n` +
-    `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
+    `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n` +
+    `token radar: ${selfCheck}\n` +
+    `token radar: top 3: ${top3}\n`,
 );

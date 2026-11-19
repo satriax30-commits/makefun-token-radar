@@ -82,6 +82,21 @@
     if (age < 365) return 45;
     return 30;
   }
+  // Gas is chain-aware: a dollar on a cheap chain buys many more qualifying actions than on mainnet.
+  // The same tiers main.ts uses, so the page and the board name the same costs.
+  var CHEAP_GAS_CHAINS = ['Arbitrum', 'Optimism', 'Base', 'Polygon', 'Avalanche', 'BSC', 'BNB Chain', 'Linea', 'Scroll', 'Blast', 'zkSync Era', 'zkSync', 'Mantle', 'Mode', 'Fraxtal', 'Starknet', 'Fantom', 'Cronos', 'Gnosis', 'Celo', 'Aurora', 'Moonbeam', 'Moonriver', 'Kava', 'Harmony', 'Velas', 'Fuse'];
+  var FREE_GAS_CHAINS = ['Solana', 'Aptos', 'Sui', 'Near', 'Sei', 'Injective', 'Osmosis', 'Celestia', 'Movement', 'Cosmos', 'Algorand', 'Hedera', 'Flow', 'Stellar', 'XRP Ledger', 'Tezos', 'Tron'];
+  function gasUsdFor(chain) {
+    if (chain === 'Ethereum') return 8;
+    if (CHEAP_GAS_CHAINS.indexOf(chain) >= 0 || FREE_GAS_CHAINS.indexOf(chain) >= 0) return 1;
+    return 2;
+  }
+  function gasNoteFor(chain) {
+    if (chain === 'Ethereum') return 'about $8 of gas on Ethereum';
+    if (FREE_GAS_CHAINS.indexOf(chain) >= 0) return 'a few cents of gas on ' + chain;
+    if (CHEAP_GAS_CHAINS.indexOf(chain) >= 0) return 'under $1 of gas on ' + chain;
+    return 'about $2 of gas on ' + chain;
+  }
   function actionFor(p, capital, chain) {
     var c = (p.category || '').toLowerCase();
     var name = p.name;
@@ -95,6 +110,17 @@
     if (c.indexOf('stable') >= 0) return 'Mint or deposit $' + capital + ' of the stable asset through ' + name + ' on ' + chain + '.';
     if (c.indexOf('rwa') >= 0) return "Mint $" + capital + " of the protocol's yield asset on " + chain + ' and hold it.';
     if (c.indexOf('insurance') >= 0) return 'Buy $' + capital + ' of cover from ' + name + ' on ' + chain + ' and keep the policy.';
+    if (c.indexOf('basis trading') >= 0) return 'Deposit $' + capital + ' of USDC to ' + name + ' on ' + chain + ' and open a delta-neutral basis position against it.';
+    if (c.indexOf('options') >= 0) return 'Deposit $' + capital + " of USDC into " + name + "'s options vault on " + chain + ' and keep the position open.';
+    if (c.indexOf('launchpad') >= 0) return 'Stake $' + capital + " of the chain's asset through " + name + ' on ' + chain + ' to qualify for its next launch allocation.';
+    if (c.indexOf('payments') >= 0) return 'Top up $' + capital + ' of USDC in ' + name + ' on ' + chain + ' and route one payment through it.';
+    if (c.indexOf('privacy') >= 0) return 'Deposit $' + capital + " of USDC into " + name + "'s private pool on " + chain + ' and keep the shielded balance.';
+    if (c.indexOf('index') >= 0) return 'Buy $' + capital + ' of ' + name + "'s index token on " + chain + ' and hold the basket.';
+    if (c.indexOf('synthetic') >= 0) return 'Mint $' + capital + ' of a synthetic asset through ' + name + ' on ' + chain + ' against USDC collateral.';
+    if (c.indexOf('token locker') >= 0) return 'Lock $' + capital + ' of tokens in a ' + name + ' vesting lock on ' + chain + ' and keep the lock open.';
+    if (c.indexOf('governance') >= 0) return 'Delegate $' + capital + ' of voting power through ' + name + ' on ' + chain + ' and vote in its next proposal.';
+    if (c.indexOf('farm') >= 0) return 'Deposit $' + capital + " of USDC into " + name + "'s farm on " + chain + ' and keep the position open.';
+    if (c === 'chain') return 'Bridge $' + capital + ' of USDC to ' + chain + " through " + name + "'s native app and use it there.";
     return 'Deposit $' + capital + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
   }
   function secondActionFor(p, chain) {
@@ -114,6 +140,17 @@
     if (c.indexOf('stable') >= 0) return 'Redeem $25 of the stable asset through ' + name + ' and mint it again.';
     if (c.indexOf('rwa') >= 0) return 'Claim the first yield distribution from ' + name + ' once it is available.';
     if (c.indexOf('insurance') >= 0) return 'Top up the cover on ' + name + ' by $25 before the first policy ends.';
+    if (c.indexOf('basis trading') >= 0) return 'Close the basis position on ' + name + ' and open a second one at a different size.';
+    if (c.indexOf('options') >= 0) return 'Sell one small covered option through ' + name + ' and let it settle.';
+    if (c.indexOf('launchpad') >= 0) return 'Claim any allocation ' + name + ' offers the wallet and hold the allocation.';
+    if (c.indexOf('payments') >= 0) return 'Make a second, smaller payment through ' + name + ' a week later.';
+    if (c.indexOf('privacy') >= 0) return 'Withdraw a small amount from the ' + name + ' pool and shield it again.';
+    if (c.indexOf('index') >= 0) return 'Rebalance the ' + name + ' index position once the basket changes.';
+    if (c.indexOf('synthetic') >= 0) return 'Burn $25 of the synthetic asset on ' + name + ' and mint it again.';
+    if (c.indexOf('token locker') >= 0) return 'Extend the ' + name + ' lock by $25 before the first lock ends.';
+    if (c.indexOf('governance') >= 0) return 'Vote in a second ' + name + ' proposal from the same wallet.';
+    if (c.indexOf('farm') >= 0) return 'Harvest the first farm rewards on ' + name + ' and compound $25 back in.';
+    if (c === 'chain') return 'Use a second native app on ' + chain + ' from the same wallet.';
     return 'Use a second feature of ' + name + ' on ' + chain + ', such as a swap, a vote or a deposit on another chain.';
   }
   function stepText(step) {
@@ -126,12 +163,12 @@
     var chain = chainOf(p);
     var capital = capitalFor(p);
     var hold = holdDaysFor(p.age_days);
-    var gas = capital >= 150 ? 8 : 4;
+    var gas = gasUsdFor(chain);
     return [
       { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $3 of gas for the first transaction', time: '5 minutes' },
       { text: actionFor(p, capital, chain), cost: '$' + capital + ' of capital and about $' + gas + ' of gas', time: '15 minutes to set up' },
-      { text: secondActionFor(p, chain), cost: 'about $25 of activity and $2 of gas', time: '10 minutes' },
-      { text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', cost: 'about $2 of gas a week', time: '10 minutes a week' },
+      { text: secondActionFor(p, chain), cost: 'about $25 of activity and $' + gas + ' of gas', time: '10 minutes' },
+      { text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', cost: gasNoteFor(chain) + ' a week', time: '10 minutes a week' },
       { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', cost: 'the $' + capital + ' stays in the position', time: hold + ' days' },
       { text: "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
       { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
@@ -397,6 +434,44 @@
   var dialog = el('dialog', { class: 'detail', id: 'detail', 'aria-labelledby': 'detail-title' });
   dialog.addEventListener('close', function () { state.selected = null; writeHash(); });
 
+  // Copy one protocol's farm plan as numbered plain text. The Clipboard API is tried first;
+  // the hidden-textarea fallback covers browsers without it, and a failed copy leaves the
+  // button untouched so the reader can select the steps by hand instead.
+  function copyFarmPlan(button, steps) {
+    var text = steps.map(function (s, i) { return (i + 1) + '. ' + s; }).join('\n');
+    function done() {
+      button.textContent = 'Copied';
+      button.classList.add('copied');
+      button.setAttribute('aria-label', 'Farm plan copied to clipboard');
+      window.setTimeout(function () {
+        button.textContent = 'Copy farm plan';
+        button.classList.remove('copied');
+        button.removeAttribute('aria-label');
+      }, 2000);
+    }
+    function fallback() {
+      var area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      try {
+        document.execCommand('copy');
+        done();
+      } catch (e) {
+        button.textContent = 'Copy failed';
+      }
+      document.body.removeChild(area);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  }
+
   function openDetail(slug) {
     var row = DATA.rows.filter(function (r) { return r.slug === slug; })[0];
     if (!row) return;
@@ -428,7 +503,10 @@
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price.' })
     ));
     dialog.appendChild(el('section', { class: 'detail-section' },
-      el('h3', { text: 'Farm plan' }),
+      el('div', { class: 'detail-section-head' },
+        el('h3', { text: 'Farm plan' }),
+        el('button', { class: 'copy-plan', type: 'button', 'aria-live': 'polite', text: 'Copy farm plan', onclick: function () { copyFarmPlan(this, steps); } })
+      ),
       el('ol', { class: 'steps' }, steps.map(function (s) {
         var at = s.indexOf(' Cost: ');
         var action = at >= 0 ? s.slice(0, at) : s;
@@ -441,6 +519,10 @@
     } else {
       dialog.setAttribute('open', '');
     }
+    // Keyboard: focus the Close button so a keyboard reader lands on a control at once.
+    // Escape closes the dialog from anywhere in it (see the window keydown handler below).
+    var closeButton = dialog.querySelector('.close');
+    if (closeButton) closeButton.focus();
   }
 
   function render() {

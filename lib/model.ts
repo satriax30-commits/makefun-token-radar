@@ -338,6 +338,32 @@ function holdDaysFor(age: number | null): number {
   return 30;
 }
 
+/** Chains where one transaction costs under a dollar, and chains where it costs cents. */
+const CHEAP_GAS_CHAINS = new Set([
+  'Arbitrum', 'Optimism', 'Base', 'Polygon', 'Avalanche', 'BSC', 'BNB Chain', 'Linea', 'Scroll',
+  'Blast', 'zkSync Era', 'zkSync', 'Mantle', 'Mode', 'Fraxtal', 'Starknet', 'Fantom', 'Cronos',
+  'Gnosis', 'Celo', 'Aurora', 'Moonbeam', 'Moonriver', 'Kava', 'Harmony', 'Velas', 'Fuse',
+]);
+const FREE_GAS_CHAINS = new Set([
+  'Solana', 'Aptos', 'Sui', 'Near', 'Sei', 'Injective', 'Osmosis', 'Celestia', 'Movement',
+  'Cosmos', 'Algorand', 'Hedera', 'Flow', 'Stellar', 'XRP Ledger', 'Tezos', 'Tron',
+]);
+
+/** The dollars one transaction costs on a chain, for the setup step's cost line. */
+function gasUsdFor(chain: string): number {
+  if (chain === 'Ethereum') return 8;
+  if (CHEAP_GAS_CHAINS.has(chain) || FREE_GAS_CHAINS.has(chain)) return 1;
+  return 2;
+}
+
+/** The gas line a weekly action carries, naming the chain it runs on. */
+function gasNoteFor(chain: string): string {
+  if (chain === 'Ethereum') return 'about $8 of gas on Ethereum';
+  if (FREE_GAS_CHAINS.has(chain)) return `a few cents of gas on ${chain}`;
+  if (CHEAP_GAS_CHAINS.has(chain)) return `under $1 of gas on ${chain}`;
+  return `about $2 of gas on ${chain}`;
+}
+
 /** The category's main action, in the words a farmer can follow. */
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
@@ -352,6 +378,17 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   if (c.includes('stable')) return `Mint or deposit $${capital} of the stable asset through ${name} on ${chain}.`;
   if (c.includes('rwa')) return `Mint $${capital} of the protocol's yield asset on ${chain} and hold it.`;
   if (c.includes('insurance')) return `Buy $${capital} of cover from ${name} on ${chain} and keep the policy.`;
+  if (c.includes('basis trading')) return `Deposit $${capital} of USDC to ${name} on ${chain} and open a delta-neutral basis position against it.`;
+  if (c.includes('options')) return `Deposit $${capital} of USDC into ${name}'s options vault on ${chain} and keep the position open.`;
+  if (c.includes('launchpad')) return `Stake $${capital} of the chain's asset through ${name} on ${chain} to qualify for its next launch allocation.`;
+  if (c.includes('payments')) return `Top up $${capital} of USDC in ${name} on ${chain} and route one payment through it.`;
+  if (c.includes('privacy')) return `Deposit $${capital} of USDC into ${name}'s private pool on ${chain} and keep the shielded balance.`;
+  if (c.includes('index')) return `Buy $${capital} of ${name}'s index token on ${chain} and hold the basket.`;
+  if (c.includes('synthetic')) return `Mint $${capital} of a synthetic asset through ${name} on ${chain} against USDC collateral.`;
+  if (c.includes('token locker')) return `Lock $${capital} of tokens in a ${name} vesting lock on ${chain} and keep the lock open.`;
+  if (c.includes('governance')) return `Delegate $${capital} of voting power through ${name} on ${chain} and vote in its next proposal.`;
+  if (c.includes('farm')) return `Deposit $${capital} of USDC into ${name}'s farm on ${chain} and keep the position open.`;
+  if (c === 'chain') return `Bridge $${capital} of USDC to ${chain} through ${name}'s native app and use it there.`;
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
@@ -373,6 +410,17 @@ function secondActionFor(p: SnapshotProtocol, chain: string): string {
   if (c.includes('stable')) return `Redeem $25 of the stable asset through ${name} and mint it again.`;
   if (c.includes('rwa')) return `Claim the first yield distribution from ${name} once it is available.`;
   if (c.includes('insurance')) return `Top up the cover on ${name} by $25 before the first policy ends.`;
+  if (c.includes('basis trading')) return `Close the basis position on ${name} and open a second one at a different size.`;
+  if (c.includes('options')) return `Sell one small covered option through ${name} and let it settle.`;
+  if (c.includes('launchpad')) return `Claim any allocation ${name} offers the wallet and hold the allocation.`;
+  if (c.includes('payments')) return `Make a second, smaller payment through ${name} a week later.`;
+  if (c.includes('privacy')) return `Withdraw a small amount from the ${name} pool and shield it again.`;
+  if (c.includes('index')) return `Rebalance the ${name} index position once the basket changes.`;
+  if (c.includes('synthetic')) return `Burn $25 of the synthetic asset on ${name} and mint it again.`;
+  if (c.includes('token locker')) return `Extend the ${name} lock by $25 before the first lock ends.`;
+  if (c.includes('governance')) return `Vote in a second ${name} proposal from the same wallet.`;
+  if (c.includes('farm')) return `Harvest the first farm rewards on ${name} and compound $25 back in.`;
+  if (c === 'chain') return `Use a second native app on ${chain} from the same wallet.`;
   return `Use a second feature of ${name} on ${chain}, such as a swap, a vote or a deposit on another chain.`;
 }
 
@@ -385,7 +433,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
-  const gas = capital >= 150 ? 8 : 4;
+  const gas = gasUsdFor(chain);
   return [
     {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
@@ -399,12 +447,12 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     },
     {
       text: secondActionFor(p, chain),
-      cost: 'about $25 of activity and $2 of gas',
+      cost: `about $25 of activity and $${gas} of gas`,
       time: '10 minutes',
     },
     {
       text: `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.`,
-      cost: 'about $2 of gas a week',
+      cost: `${gasNoteFor(chain)} a week`,
       time: '10 minutes a week',
     },
     {
